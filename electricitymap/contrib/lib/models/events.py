@@ -1,9 +1,12 @@
+# pylint: disable=no-member
 import datetime as dt
+import math
 from abc import ABC, abstractmethod
+from collections.abc import Set
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from logging import Logger
-from typing import AbstractSet, Any, Optional
+from typing import Any, Optional
 
 import pandas as pd
 from pydantic import BaseModel, PrivateAttr, ValidationError, validator
@@ -14,6 +17,15 @@ from electricitymap.contrib.lib.models.constants import VALID_CURRENCIES
 from electricitymap.contrib.lib.types import ZoneKey
 
 LOWER_DATETIME_BOUND = datetime(2000, 1, 1, tzinfo=timezone.utc)
+
+
+def _none_safe_round(value: float | None, precision: int = 6) -> float | None:
+    """
+    Rounds a value to the provided precision.
+    If the value is None, it is returned as is.
+    The default precision is 6 decimal places, which gives us a precision of 1 W.
+    """
+    return None if value is None else round(value, precision)
 
 
 class Mix(BaseModel, ABC):
@@ -28,17 +40,34 @@ class Mix(BaseModel, ABC):
         that maps to the same Electricity Maps production mode.
         """
         existing_value: float | None = getattr(self, mode)
+        if value is not None and math.isnan(value):
+            value = None
         if existing_value is not None:
             value = 0 if value is None else value
-            self.__setattr__(
-                mode, round(existing_value + value, 6)
-            )  # 6 decimal places gives us a precision of 1 W.
+            self.__setattr__(mode, existing_value + value)
         else:
-            self.__setattr__(mode, value if value is None else round(value, 6))
+            self.__setattr__(mode, value)
 
     @classmethod
     def merge(cls, mixes: list["Mix"]) -> "Mix":
         raise NotImplementedError()
+
+    @classmethod
+    def _update(cls, mix: "Mix", new_mix: "Mix") -> "Mix":
+        raise NotImplementedError()
+
+    def __setattr__(self, name: str, value: float | None) -> None:
+        """
+        Overriding the setattr method to raise an error if the mode is unknown.
+        """
+        # 6 decimal places gives us a precision of 1 W.
+        super().__setattr__(name, _none_safe_round(value))
+
+    def __setitem__(self, key: str, value: float | None) -> None:
+        """
+        Allows to set the value of a mode using the bracket notation.
+        """
+        self.__setattr__(key, value)
 
 
 class ProductionMix(Mix):
@@ -75,7 +104,7 @@ class ProductionMix(Mix):
                 self._corrected_negative_values.add(attr)
                 self.__setattr__(attr, None)
 
-    def dict(
+    def dict(  # noqa: A003
         self,
         *,
         include: set | dict | None = None,
@@ -113,7 +142,7 @@ class ProductionMix(Mix):
         and to check for negative values and set them to None.
         This method also keeps track of the modes that have been corrected.
         """
-        if not name in PRODUCTION_MODES:
+        if name not in PRODUCTION_MODES:
             raise AttributeError(f"Unknown production mode: {name}")
         if value is not None and value < 0:
             self._corrected_negative_values.add(name)
@@ -150,7 +179,7 @@ class ProductionMix(Mix):
         return len(self._corrected_negative_values) > 0
 
     @property
-    def corrected_negative_modes(self) -> AbstractSet[str]:
+    def corrected_negative_modes(self) -> Set[str]:
         return self._corrected_negative_values
 
     @classmethod
@@ -172,6 +201,21 @@ class ProductionMix(Mix):
             )
         return merged_production_mix
 
+    @classmethod
+    def _update(
+        cls,
+        production_mix: "ProductionMix | None",
+        new_production_mix: "ProductionMix | None",
+    ) -> "ProductionMix | None":
+        """Update the production mix of a zone at a given time."""
+        if production_mix is None:
+            return new_production_mix
+        elif new_production_mix is not None:
+            for mode, value in new_production_mix:
+                if value is not None:
+                    production_mix[mode] = value
+        return production_mix
+
 
 class StorageMix(Mix):
     """
@@ -187,7 +231,7 @@ class StorageMix(Mix):
         """
         Overriding the setattr method to raise an error if the mode is unknown.
         """
-        if not name in STORAGE_MODES:
+        if name not in STORAGE_MODES:
             raise AttributeError(f"Unknown storage mode: {name}")
         return super().__setattr__(name, value)
 
@@ -205,6 +249,19 @@ class StorageMix(Mix):
                 value = getattr(storage_mix_to_merge, mode)
                 merged_storage_mix.add_value(mode, value)
         return merged_storage_mix
+
+    @classmethod
+    def _update(
+        cls, storage_mix: "StorageMix | None", new_storage_mix: "StorageMix | None"
+    ) -> "StorageMix | None":
+        """Update the storage mix of a zone at a given time."""
+        if storage_mix is None:
+            return new_storage_mix
+        elif new_storage_mix is not None:
+            for mode, value in new_storage_mix:
+                if value is not None:
+                    storage_mix[mode] = value
+        return storage_mix
 
 
 class EventSourceType(str, Enum):
@@ -248,9 +305,7 @@ class Event(BaseModel, ABC):
             "sourceType", EventSourceType.measured
         ) != EventSourceType.forecasted and v.astimezone(timezone.utc) > datetime.now(
             timezone.utc
-        ) + timedelta(
-            days=1
-        ):
+        ) + timedelta(days=1):
             raise ValueError(
                 f"Date is in the future and this is not a forecasted point: {v}"
             )
@@ -329,7 +384,7 @@ class Exchange(Event):
     Negative otherwise.
     """
 
-    netFlow: float
+    netFlow: float | None
 
     @validator("zoneKey")
     def _validate_zone_key(cls, v: str):
@@ -344,6 +399,10 @@ class Exchange(Event):
 
     @validator("netFlow")
     def _validate_value(cls, v: float):
+        if v is None:
+            raise ValueError(f"Exchange cannot be None: {v}")
+        if math.isnan(v):
+            raise ValueError(f"Exchange cannot be NaN: {v}")
         # TODO in the future those checks should be performed in the data quality layer.
         if abs(v) > 100000:
             raise ValueError(f"Exchange is implausibly high, above 100GW: {v}")
@@ -355,7 +414,7 @@ class Exchange(Event):
         zoneKey: ZoneKey,
         datetime: datetime,
         source: str,
-        netFlow: float,
+        netFlow: float | None,
         sourceType: EventSourceType = EventSourceType.measured,
     ) -> Optional["Exchange"]:
         try:
@@ -363,11 +422,45 @@ class Exchange(Event):
                 zoneKey=zoneKey,
                 datetime=datetime,
                 source=source,
-                netFlow=netFlow,
+                netFlow=_none_safe_round(netFlow),
                 sourceType=sourceType,
             )
         except ValidationError as e:
-            logger.error(f"Error(s) creating exchange Event {datetime}: {e}")
+            logger.error(
+                f"Error(s) creating exchange Event {datetime}: {e}",
+                extra={
+                    "zoneKey": zoneKey,
+                    "datetime": datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "kind": "exchange",
+                },
+            )
+
+    @staticmethod
+    def _update(event: "Exchange", new_event: "Exchange") -> "Exchange":
+        """Update the net exchange between two zones."""
+        if event.zoneKey != new_event.zoneKey:
+            raise ValueError(
+                f"Cannot update events from different zones: {event.zoneKey} and {new_event.zoneKey}"
+            )
+        if event.datetime != new_event.datetime:
+            raise ValueError(
+                f"Cannot update events from different datetimes: {event.datetime} and {new_event.datetime}"
+            )
+        if event.source != new_event.source:
+            raise ValueError(
+                f"Cannot update events from different sources: {event.source} and {new_event.source}"
+            )
+        if event.sourceType != new_event.sourceType:
+            raise ValueError(
+                f"Cannot update events from different source types: {event.sourceType} and {new_event.sourceType}"
+            )
+        return Exchange(
+            zoneKey=event.zoneKey,
+            datetime=event.datetime,
+            source=event.source,
+            netFlow=new_event.netFlow,  # Exchange values can never be none so a new valid value will always be provided.
+            sourceType=event.sourceType,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -382,10 +475,14 @@ class Exchange(Event):
 class TotalProduction(Event):
     """Represents the total production of a zone at a given time. The value is in MW."""
 
-    value: float
+    value: float | None
 
     @validator("value")
     def _validate_value(cls, v: float):
+        if v is None:
+            raise ValueError(f"Total production cannot be None: {v}")
+        if math.isnan(v):
+            raise ValueError(f"Exchange cannot be NaN: {v}")
         if v < 0:
             raise ValueError(f"Total production cannot be negative: {v}")
         # TODO in the future those checks should be performed in the data quality layer.
@@ -399,7 +496,7 @@ class TotalProduction(Event):
         zoneKey: ZoneKey,
         datetime: datetime,
         source: str,
-        value: float,
+        value: float | None,
         sourceType: EventSourceType = EventSourceType.measured,
     ) -> Optional["TotalProduction"]:
         try:
@@ -407,11 +504,18 @@ class TotalProduction(Event):
                 zoneKey=zoneKey,
                 datetime=datetime,
                 source=source,
-                value=value,
+                value=_none_safe_round(value),
                 sourceType=sourceType,
             )
         except ValidationError as e:
-            logger.error(f"Error(s) creating total production Event {datetime}: {e}")
+            logger.error(
+                f"Error(s) creating total production Event {datetime}: {e}",
+                extra={
+                    "zoneKey": zoneKey,
+                    "datetime": datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "kind": "production",
+                },
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -433,17 +537,36 @@ class ProductionBreakdown(AggregatableEvent):
 
     @validator("production")
     def _validate_production_mix(cls, v):
-        if v is not None and not v.has_corrected_negative_values:
-            if all(value is None for value in v.dict().values()):
-                raise ValueError("Mix is completely empty")
+        if (
+            v is not None
+            and not v.has_corrected_negative_values
+            and all(value is None or math.isnan(value) for value in v.dict().values())
+        ):
+            raise ValueError("Mix is completely empty")
         return v
 
     @validator("storage")
     def _validate_storage_mix(cls, v):
-        if v is not None:
-            if all(value is None for value in v.dict().values()):
-                return None
+        if v is not None and all(
+            value is None or math.isnan(value) for value in v.dict().values()
+        ):
+            return None
         return v
+
+    def get_value(self, mode: str) -> float | None:
+        """Returns the value of the provided mode this can be production or storage.
+        To retrieve the value of a storage mode, the mode should be suffixed with storage.
+        Ex: retrive hydro production: get_value("hydro")
+        Ex: retrive hydro storage: get_value("hydro storage")
+        """
+        if "storage" in mode:
+            if self.storage is None:
+                return None
+            # This naming is the same as the capacity naming in the config.
+            return getattr(self.storage, mode.split(" ")[0])
+        if self.production is None:
+            return None
+        return getattr(self.production, mode)
 
     @staticmethod
     def create(
@@ -472,7 +595,12 @@ class ProductionBreakdown(AggregatableEvent):
             )
         except ValidationError as e:
             logger.error(
-                f"Error(s) creating production breakdown Event {datetime}: {e}"
+                f"Error(s) creating production breakdown Event {datetime}: {e}",
+                extra={
+                    "zoneKey": zoneKey,
+                    "datetime": datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "kind": "production breakdown",
+                },
             )
 
     @staticmethod
@@ -514,6 +642,38 @@ class ProductionBreakdown(AggregatableEvent):
             sourceType=source_type,
         )
 
+    @staticmethod
+    def _update(
+        event: "ProductionBreakdown", new_event: "ProductionBreakdown"
+    ) -> "ProductionBreakdown":
+        """Update the production and storage breakdown of a zone at a given time."""
+        if event.zoneKey != new_event.zoneKey:
+            raise ValueError(
+                f"Cannot update events from different zones: {event.zoneKey} and {new_event.zoneKey}"
+            )
+        if event.datetime != new_event.datetime:
+            raise ValueError(
+                f"Cannot update events from different datetimes: {event.datetime} and {new_event.datetime}"
+            )
+        if event.source != new_event.source:
+            raise ValueError(
+                f"Cannot update events from different sources: {event.source} and {new_event.source}"
+            )
+        if event.sourceType != new_event.sourceType:
+            raise ValueError(
+                f"Cannot update events from different source types: {event.sourceType} and {new_event.sourceType}"
+            )
+        production_mix = ProductionMix._update(event.production, new_event.production)
+        storage_mix = StorageMix._update(event.storage, new_event.storage)
+        return ProductionBreakdown(
+            zoneKey=event.zoneKey,
+            datetime=event.datetime,
+            source=event.source,
+            production=production_mix,
+            storage=storage_mix,
+            sourceType=event.sourceType,
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "datetime": self.datetime,
@@ -535,10 +695,14 @@ class ProductionBreakdown(AggregatableEvent):
 class TotalConsumption(Event):
     """Reprensent the total consumption of a zone. The total consumption is expressed in MW."""
 
-    consumption: float
+    consumption: float | None
 
     @validator("consumption")
     def _validate_consumption(cls, v: float):
+        if v is None:
+            raise ValueError(f"Total consumption cannot be None: {v}")
+        if math.isnan(v):
+            raise ValueError(f"Exchange cannot be NaN: {v}")
         if v < 0:
             raise ValueError(f"Total consumption cannot be negative: {v}")
         # TODO in the future those checks should be performed in the data quality layer.
@@ -554,7 +718,7 @@ class TotalConsumption(Event):
         zoneKey: ZoneKey,
         datetime: datetime,
         source: str,
-        consumption: float,
+        consumption: float | None,
         sourceType: EventSourceType = EventSourceType.measured,
     ) -> Optional["TotalConsumption"]:
         try:
@@ -562,7 +726,7 @@ class TotalConsumption(Event):
                 zoneKey=zoneKey,
                 datetime=datetime,
                 source=source,
-                consumption=consumption,
+                consumption=_none_safe_round(consumption),
                 sourceType=sourceType,
             )
         except ValidationError as e:
@@ -586,7 +750,7 @@ class TotalConsumption(Event):
 
 
 class Price(Event):
-    price: float
+    price: float | None
     currency: str
 
     @validator("currency")
@@ -604,13 +768,22 @@ class Price(Event):
             raise ValueError(f"Date is before 2000, this is not plausible: {v}")
         return v
 
+    @validator("price")
+    def _validate_price(cls, v: float | None) -> float:
+        """Prices can be negative but not None, so we should only check for None values"""
+        if v is None:
+            raise ValueError(f"Price cannot be None: {v}")
+        if math.isnan(v):
+            raise ValueError(f"Price cannot be NaN: {v}")
+        return v
+
     @staticmethod
     def create(
         logger: Logger,
         zoneKey: ZoneKey,
         datetime: datetime,
         source: str,
-        price: float,
+        price: float | None,
         currency: str,
         sourceType: EventSourceType = EventSourceType.measured,
     ) -> Optional["Price"]:
@@ -624,7 +797,14 @@ class Price(Event):
                 sourceType=sourceType,
             )
         except ValidationError as e:
-            logger.error(f"Error(s) creating price Event {datetime}: {e}")
+            logger.error(
+                f"Error(s) creating price Event {datetime}: {e}",
+                extra={
+                    "zoneKey": zoneKey,
+                    "datetime": datetime.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "kind": "price",
+                },
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {

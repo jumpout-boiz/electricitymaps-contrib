@@ -1,13 +1,13 @@
 import unittest
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
-from pytz import timezone
 from requests import Session
 from requests_mock import ANY, Adapter
 
 from parsers import NTESMO
 
-australia = timezone("Australia/Darwin")
+australia = ZoneInfo("Australia/Darwin")
 
 
 class TestNTESMO(unittest.TestCase):
@@ -15,8 +15,8 @@ class TestNTESMO(unittest.TestCase):
         self.session = Session()
         self.adapter = Adapter()
         self.session.mount("https://", self.adapter)
-        data = open("parsers/test/mocks/AU/NTESMO.xlsx", "rb")
-        self.adapter.register_uri(ANY, ANY, content=data.read())
+        with open("parsers/test/mocks/AU/NTESMO.xlsx", "rb") as data:
+            self.adapter.register_uri(ANY, ANY, content=data.read())
         index_page = """<div class="smp-tiles-article__item">
                 <a href="https://ntesmo.com.au/__data/assets/excel_doc/0013/116113/Market-Information_System-Control-daily-trading-day_220401.xlsx">
                     <div class="smp-tiles-article__title">01 December 2022</div>
@@ -83,11 +83,15 @@ class TestNTESMO(unittest.TestCase):
 
         self.assertEqual(
             data_list[0]["datetime"],
-            australia.localize(datetime(year=2022, month=12, day=1, hour=4, minute=30)),
+            datetime(year=2022, month=12, day=1, hour=4, minute=30).replace(
+                tzinfo=australia
+            ),
         )
         self.assertEqual(
             data_list[-1]["datetime"],
-            australia.localize(datetime(year=2022, month=12, day=2, hour=4, minute=00)),
+            datetime(year=2022, month=12, day=2, hour=4, minute=00).replace(
+                tzinfo=australia
+            ),
         )
 
     def test_fetch_consumption(self):
@@ -109,9 +113,13 @@ class TestNTESMO(unittest.TestCase):
         # Check that the dates corresponds to two days:
         self.assertEqual(
             data_list[0]["datetime"],
-            australia.localize(datetime(year=2022, month=12, day=1, hour=4, minute=30)),
+            datetime(year=2022, month=12, day=1, hour=4, minute=30).replace(
+                tzinfo=australia
+            ),
         )
         self.assertEqual(
             data_list[-1]["datetime"],
-            australia.localize(datetime(year=2022, month=12, day=2, hour=4, minute=00)),
+            datetime(year=2022, month=12, day=2, hour=4, minute=00).replace(
+                tzinfo=australia
+            ),
         )

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 
+from datetime import datetime, timezone
 from logging import Logger, getLogger
 
-import arrow
 from requests import Session
 
 TYPE_MAPPING = {  # Real values around midnight
@@ -45,7 +45,7 @@ def fetch_production(
 
     datapoints = []
     for row in response:
-        for k in TYPE_MAPPING.keys():
+        for k in TYPE_MAPPING:
             if row[0].startswith(k):
                 datapoints.append((TYPE_MAPPING[k], row[1]))
                 break
@@ -59,7 +59,7 @@ def fetch_production(
         "production": production,
         "storage": {},
         "source": "eso.bg",
-        "datetime": arrow.utcnow().datetime,
+        "datetime": datetime.now(timezone.utc),
     }
 
     return data

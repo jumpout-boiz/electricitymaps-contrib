@@ -2,15 +2,12 @@
 
 """Parser for the Southwest Power Pool area of the United States."""
 
-
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from io import StringIO
 from logging import Logger, getLogger
 
-import arrow
 import pandas as pd
 from dateutil import parser
-from pytz import utc
 from requests import Session
 
 from parsers.lib.config import refetch_frequency
@@ -193,7 +190,7 @@ def fetch_production(
 
     data = []
     for item in processed_data:
-        dt = item[0].replace(tzinfo=utc)
+        dt = item[0].replace(tzinfo=timezone.utc)
         datapoint = {
             "zoneKey": zone_key,
             "datetime": dt,
@@ -236,7 +233,7 @@ def fetch_load_forecast(
     for index in range(len(raw_data)):
         forecast = raw_data.loc[index].to_dict()
 
-        dt = parser.parse(forecast["GMTIntervalEnd"]).replace(tzinfo=utc)
+        dt = parser.parse(forecast["GMTIntervalEnd"]).replace(tzinfo=timezone.utc)
         load = _NaN_safe_get(forecast, "STLF")
         if load is None:
             load = _NaN_safe_get(forecast, "MTLF")
@@ -272,11 +269,7 @@ def fetch_wind_solar_forecasts(
     else:
         dt = parser.parse(target_datetime)
 
-    FORECAST_URL_PATH = (
-        "%2F{0}%2F{1:02d}%2F{2:02d}%2FOP-MTRF-{0}{1:02d}{2:02d}0000.csv".format(
-            dt.year, dt.month, dt.day
-        )
-    )
+    FORECAST_URL_PATH = f"%2F{dt.year}%2F{dt.month:02d}%2F{dt.day:02d}%2FOP-MTRF-{dt.year}{dt.month:02d}{dt.day:02d}0000.csv"
     FORECAST_URL = (
         f"{US_PROXY}/file-browser-api/download/midterm-resource-forecast?{HOST_PARAMETER}&path="
         + FORECAST_URL_PATH
@@ -297,7 +290,7 @@ def fetch_wind_solar_forecasts(
     for index in range(len(raw_data)):
         forecast = raw_data.loc[index].to_dict()
 
-        dt = parser.parse(forecast["GMTIntervalEnd"]).replace(tzinfo=utc)
+        dt = parser.parse(forecast["GMTIntervalEnd"]).replace(tzinfo=timezone.utc)
 
         # Get short term forecast if available, else medium term
         solar = _NaN_safe_get(forecast, "Solar Forecast MW")
@@ -380,7 +373,7 @@ def format_exchange_data(
 ) -> list:
     """format exchanges data into list of data points"""
     sorted_zone_keys = "->".join(sorted([zone_key1, zone_key2]))
-    data = data[[col for col in EXCHANGE_MAPPING]]
+    data = data[list(EXCHANGE_MAPPING)]
     data = data.melt(var_name="zone_key2", value_name="exchange", ignore_index=False)
     data.zone_key2 = data.zone_key2.map(EXCHANGE_MAPPING)
 
@@ -393,7 +386,7 @@ def format_exchange_data(
         data_point = {
             "sortedZoneKeys": sorted_zone_keys,
             "netFlow": round(data_dt.values[0], 4),
-            "datetime": arrow.get(dt).datetime,
+            "datetime": dt.to_pydatetime(),
             "source": "spp.org",
         }
         all_data_points.append(data_point)
@@ -410,14 +403,11 @@ def fetch_exchange(
     target_datetime: datetime | None = None,
     logger: Logger = getLogger(__name__),
 ) -> list:
-    now = datetime.now(tz=utc)
-    if (
-        target_datetime is None
-        or target_datetime > arrow.get(now).floor("day").datetime
-    ):
+    now = datetime.now(tz=timezone.utc)
+    if target_datetime is None or target_datetime > now.date():
         target_datetime = now
         exchanges = fetch_live_exchange(zone_key1, zone_key2, session, target_datetime)
-    elif target_datetime < datetime(2014, 3, 1, tzinfo=utc):
+    elif target_datetime < datetime(2014, 3, 1, tzinfo=timezone.utc):
         raise NotImplementedError(
             "Exchange data is not available from this sourc before 03/2014"
         )

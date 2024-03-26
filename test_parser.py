@@ -46,6 +46,10 @@ def test_parser(zone: ZoneKey, data_type: str, target_datetime: str | None):
     >>> poetry run test_parser GE production --target_datetime="2022-04-10 15:00"
 
     """
+    if data_type == "productionCapacity":
+        raise ValueError(
+            "productionCapacity is not supported by this script. Please use `poetry run update_capacity` instead."
+        )
     parsed_target_datetime = None
     if target_datetime is not None:
         parsed_target_datetime = datetime.fromisoformat(target_datetime)
@@ -58,10 +62,7 @@ def test_parser(zone: ZoneKey, data_type: str, target_datetime: str | None):
         data_type
     ][zone]
 
-    if data_type in ["exchange", "exchangeForecast"]:
-        args = zone.split("->")
-    else:
-        args = [zone]
+    args = zone.split("->") if data_type in ["exchange", "exchangeForecast"] else [zone]
     res = parser(
         *args, target_datetime=parsed_target_datetime, logger=getLogger(__name__)
     )
@@ -70,31 +71,26 @@ def test_parser(zone: ZoneKey, data_type: str, target_datetime: str | None):
         raise ValueError(f"Error: parser returned nothing ({res})")
 
     elapsed_time = time.time() - start
-    if isinstance(res, (list, tuple)):
-        res_list = list(res)
-    else:
-        res_list = [res]
+    res_list = list(res) if isinstance(res, list | tuple) else [res]
 
     try:
         dts = [e["datetime"] for e in res_list]
-    except:
+    except KeyError as error:
         raise ValueError(
             f"Parser output lacks `datetime` key for at least some of the output. Full output: \n\n{res}\n"
-        )
+        ) from error
 
     assert all(
-        [type(e["datetime"]) is datetime for e in res_list]
+        type(e["datetime"]) is datetime for e in res_list
     ), "Datetimes must be returned as native datetime.datetime objects"
 
     assert (
         any(
-            [
-                e["datetime"].tzinfo is None
-                or e["datetime"].tzinfo.utcoffset(e["datetime"]) is None
-                for e in res_list
-            ]
+            e["datetime"].tzinfo is None
+            or e["datetime"].tzinfo.utcoffset(e["datetime"]) is None
+            for e in res_list
         )
-        == False
+        is False
     ), "Datetimes must be timezone aware"
 
     last_dt = datetime.fromisoformat(f"{max(dts)}").astimezone(timezone.utc)

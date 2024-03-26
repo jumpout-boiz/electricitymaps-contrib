@@ -126,10 +126,8 @@ def fetch_production_1st_synchronous_zone(
     r = session or Session()
 
     price_zone = zone_key_price_zone_mapper[zone_key]
-    base_url = "{}/webapi/api/CommonInfo/PowerGeneration?priceZone[]={}".format(
-        HOST, price_zone
-    )
-    url = base_url + "&startDate={date}&endDate={date}".format(date=date)
+    base_url = f"{HOST}/webapi/api/CommonInfo/PowerGeneration?priceZone[]={price_zone}"
+    url = base_url + f"&startDate={date}&endDate={date}"
 
     response = r.get(url, verify=False)
     json_content = json.loads(response.text)
@@ -192,9 +190,7 @@ def fetch_production_2nd_synchronous_zone(
 
     r = session or Session()
 
-    url = "{}/webapi/api/CommonInfo/GenEquipOptions_Z2?oesTerritory[]=540000&startDate={}".format(
-        HOST, date
-    )
+    url = f"{HOST}/webapi/api/CommonInfo/GenEquipOptions_Z2?oesTerritory[]=540000&startDate={date}"
 
     response = r.get(url, verify=False)
     json_content = json.loads(response.text)
@@ -305,10 +301,10 @@ def fetch_exchange(
     sortedcodes = "->".join(sorted([zone_key1, zone_key2]))
     reversesortedcodes = "->".join(sorted([zone_key1, zone_key2], reverse=True))
 
-    if sortedcodes in exchange_ids.keys():
+    if sortedcodes in exchange_ids:
         exchange_id = exchange_ids[sortedcodes]
         direction = 1
-    elif reversesortedcodes in exchange_ids.keys():
+    elif reversesortedcodes in exchange_ids:
         exchange_id = exchange_ids[reversesortedcodes]
         direction = -1
     else:

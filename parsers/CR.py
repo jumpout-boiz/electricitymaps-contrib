@@ -3,14 +3,14 @@
 
 from datetime import datetime, time, timedelta
 from logging import Logger, getLogger
+from zoneinfo import ZoneInfo
 
-from pytz import timezone
 from requests import Session
 
 from parsers.lib.config import refetch_frequency
 from parsers.lib.exceptions import ParserException
 
-TIMEZONE = "America/Costa_Rica"
+TIMEZONE = ZoneInfo("America/Costa_Rica")
 EXCHANGE_URL = (
     "https://mapa.enteoperador.org/WebServiceScadaEORRest/webresources/generic"
 )
@@ -32,9 +32,8 @@ EXCHANGE_JSON_MAPPING = {
 
 def _to_local_datetime(dt: datetime) -> datetime:
     if dt.tzinfo is None:
-        tz = timezone(TIMEZONE)
-        return tz.localize(dt)
-    return dt.astimezone(timezone(TIMEZONE))
+        return dt.replace(tzinfo=TIMEZONE)
+    return dt.astimezone(TIMEZONE)
 
 
 def empty_record(zone_key: str):
@@ -145,7 +144,7 @@ def fetch_exchange(
 
     sorted_zones = "->".join(sorted([zone_key1, zone_key2]))
 
-    if sorted_zones not in EXCHANGE_JSON_MAPPING.keys():
+    if sorted_zones not in EXCHANGE_JSON_MAPPING:
         raise NotImplementedError("This exchange is not implemented.")
 
     s = session or Session()

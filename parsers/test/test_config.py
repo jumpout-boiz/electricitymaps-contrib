@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 """Tests for config/__init__.py."""
+
 import unittest
 
 from electricitymap.contrib.config import emission_factors
@@ -36,14 +37,14 @@ class EmissionFactorTestCase(unittest.TestCase):
             "battery charge": 0,
             "battery discharge": 66.82067058776849,
             "biomass": 230.0,
-            "coal": 953.9335274,
-            "gas": 500.5979557,
+            "coal": 968.9049130000001,
+            "gas": 501.61,
             "geothermal": 38,
             "hydro": 10.7,
             "hydro charge": 0,
             "hydro discharge": 66.82067058776849,
             "nuclear": 5.13,
-            "oil": 1013.5956561,
+            "oil": 999.44,
             "solar": 30.075,
             "unknown": 700,
             "wind": 12.62,

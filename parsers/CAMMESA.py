@@ -3,8 +3,8 @@
 
 from datetime import datetime
 from logging import Logger, getLogger
+from zoneinfo import ZoneInfo
 
-import arrow
 from requests import Session
 
 from electricitymap.contrib.lib.models.event_lists import (
@@ -84,14 +84,16 @@ def renewables_production_mix(
 ) -> ProductionBreakdownList:
     """Retrieves production mix for renewables using CAMMESA's API"""
 
-    today = arrow.now(tz="America/Argentina/Buenos_Aires").format("DD-MM-YYYY")
+    today = (
+        datetime.now()
+        .astimezone(tz=ZoneInfo("America/Argentina/Buenos_Aires"))
+        .strftime("%d-%m-%Y")
+    )
     params = {"desde": today, "hasta": today}
     renewables_response = session.get(CAMMESA_RENEWABLES_ENDPOINT, params=params)
     assert renewables_response.status_code == 200, (
         "Exception when fetching production for "
-        "{}: error when calling url={} with payload={}".format(
-            zone_key, CAMMESA_RENEWABLES_ENDPOINT, params
-        )
+        f"{zone_key}: error when calling url={CAMMESA_RENEWABLES_ENDPOINT} with payload={params}"
     )
 
     production_list = renewables_response.json()
@@ -99,7 +101,9 @@ def renewables_production_mix(
     for production_info in production_list:
         renewables_production.append(
             zoneKey=zone_key,
-            datetime=arrow.get(production_info["momento"]).datetime,
+            datetime=datetime.strptime(
+                production_info["momento"], "%Y-%m-%dT%H:%M:%S.%f%z"
+            ),
             production=ProductionMix(
                 biomass=production_info["biocombustible"],
                 hydro=production_info["hidraulica"],
@@ -121,16 +125,16 @@ def non_renewables_production_mix(
     api_cammesa_response = session.get(CAMMESA_DEMANDA_ENDPOINT, params=params)
     assert api_cammesa_response.status_code == 200, (
         "Exception when fetching production for "
-        "{}: error when calling url={} with payload={}".format(
-            zone_key, CAMMESA_DEMANDA_ENDPOINT, params
-        )
+        f"{zone_key}: error when calling url={CAMMESA_DEMANDA_ENDPOINT} with payload={params}"
     )
     production_list = api_cammesa_response.json()
     conventional_production = ProductionBreakdownList(logger)
     for production_info in production_list:
         conventional_production.append(
             zoneKey=zone_key,
-            datetime=arrow.get(production_info["fecha"]).datetime,
+            datetime=datetime.strptime(
+                production_info["fecha"], "%Y-%m-%dT%H:%M:%S.%f%z"
+            ),
             production=ProductionMix(
                 hydro=production_info["hidraulico"],
                 nuclear=production_info["nuclear"],

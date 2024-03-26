@@ -31,7 +31,7 @@ def fetch_production(
     It tries to match the solar data with the nuclear data.
     If there is a difference of more than 30 minutes between solar and nuclear data, the method will fail.
     """
-    r = session or Session()
+    session = session or Session()
     if target_datetime is not None:
         raise NotImplementedError("This parser can only fetch live data")
 
@@ -114,7 +114,7 @@ def extractTime(soup):
     imgUrlFull = IMAGE_CORE_URL + imgRelative
     text = getImageText(imgUrlFull, "jpn")
     digits = re.findall(r"\d+", text)
-    digits = list(map(lambda x: int(x), digits))
+    digits = [int(x) for x in digits]
     if len(digits) != 4:
         # something went wrong while extracting time from Japan
         raise Exception("Something went wrong while extracting local time")
@@ -136,13 +136,15 @@ def get_nuclear_production():
     html = urlopen(r).read()
     soup = BeautifulSoup(html, "html.parser")
     nuclear_datetime = extractTime(soup)
-    rows = soup.findAll("tr", {"class": "mihama_realtime"})
+    _rows = soup.findAll(
+        "tr", {"class": "mihama_realtime"}
+    )  # TODO: Should we just remove this?
     tr_list = soup.findAll("tr")
     total_kw = 0
     for tr in tr_list:
         capacity = extractCapacity(tr)
         operation_percentage = extractOperationPercentage(tr)
-        if capacity == None or operation_percentage == None:
+        if capacity is None or operation_percentage is None:
             continue
         kw = capacity * operation_percentage
         total_kw = total_kw + kw
