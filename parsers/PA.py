@@ -4,13 +4,14 @@ import json
 import re
 from datetime import datetime
 from logging import Logger, getLogger
+from zoneinfo import ZoneInfo
 
 import arrow
 import pandas as pd
 from bs4 import BeautifulSoup
 from requests import Session
 
-TIMEZONE = "America/Panama"
+TIMEZONE = ZoneInfo("America/Panama")
 
 EXCHANGE_URL = "https://sitr.cnd.com.pa/m/pub/int.html"
 CONSUMPTION_URL = "https://sitr.cnd.com.pa/m/pub/sin.html"
@@ -211,10 +212,8 @@ def fetch_production(
         ].string
     )
     assert "Térmicas" in thermal_production_breakdown_table_header, (
-        "Exception when extracting thermal generation breakdown for {}: table header does not contain "
-        "'Térmicas' but is instead named {}".format(
-            zone_key, thermal_production_breakdown_table_header
-        )
+        f"Exception when extracting thermal generation breakdown for {zone_key}: table header does not contain "
+        f"'Térmicas' but is instead named {thermal_production_breakdown_table_header}"
     )
     thermal_production_units = thermal_production_breakdown.select(
         "tbody tr td table.sitr-gen-group tr"
@@ -327,7 +326,7 @@ def fetch_exchange(
         )
 
     data = {
-        "datetime": arrow.now(TIMEZONE).datetime,
+        "datetime": datetime.now(tz=TIMEZONE),
         "netFlow": net_flows[sorted_zone_keys],
         "sortedZoneKeys": sorted_zone_keys,
         "source": url,
@@ -361,7 +360,7 @@ def fetch_consumption(
 
     data = {
         "consumption": consumption_val,
-        "datetime": arrow.now(TIMEZONE).datetime,
+        "datetime": datetime.now(tz=TIMEZONE),
         "source": url,
         "zoneKey": zone_key,
     }

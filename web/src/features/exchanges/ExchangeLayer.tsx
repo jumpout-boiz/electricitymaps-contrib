@@ -2,20 +2,24 @@ import { mapMovingAtom } from 'features/map/mapAtoms';
 import { useExchangeArrowsData } from 'hooks/arrows';
 import { useAtom } from 'jotai';
 import React from 'react';
-import { MapboxMap } from 'react-map-gl';
 import { colorblindModeAtom } from 'utils/state/atoms';
 import { useReferenceWidthHeightObserver } from 'utils/viewport';
 
 import ExchangeArrow from './ExchangeArrow';
 
-function ExchangeLayer({ map }: { map?: MapboxMap }) {
+function ExchangeLayer({ map }: { map?: maplibregl.Map }) {
   const [isMapMoving] = useAtom(mapMovingAtom);
   const [isColorBlindModeEnabled] = useAtom(colorblindModeAtom);
   const { ref, width, height } = useReferenceWidthHeightObserver();
   const arrows = useExchangeArrowsData();
 
   return (
-    <div id="exchange-layer" className="h-full w-full" ref={ref}>
+    <div
+      data-test-id="exchange-layer"
+      id="exchange-layer"
+      className="h-full w-full"
+      ref={ref}
+    >
       {/* Don't render arrows when moving map - see https://github.com/electricitymaps/electricitymaps-contrib/issues/1590. */}
       {!isMapMoving &&
         map &&

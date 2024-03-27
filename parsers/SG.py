@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 
 import re
-from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from logging import Logger, getLogger
+from typing import Any
+from zoneinfo import ZoneInfo
 
-import arrow
 from PIL import Image, ImageOps
 from pytesseract import image_to_string
 from requests import Session
 
-TIMEZONE = "Asia/Singapore"
+from electricitymap.contrib.config import ZoneKey
+from electricitymap.contrib.lib.models.event_lists import (
+    PriceList,
+    ProductionBreakdownList,
+)
+from electricitymap.contrib.lib.models.events import ProductionMix
+
+TIMEZONE = ZoneInfo("Asia/Singapore")
 
 TICKER_URL = "https://www.emcsg.com/ChartServer/blue/ticker"
 
@@ -60,20 +67,17 @@ def get_solar(session: Session, logger: Logger) -> float | None:
     Fetches a graphic showing estimated solar production data.
     Uses OCR (tesseract) to extract MW value.
     """
-
     solar_image = Image.open(session.get(SOLAR_URL, stream=True).raw)
 
     solar_mw = __detect_output_from_solar_image(solar_image, logger)
     solar_dt = __detect_datetime_from_solar_image(solar_image, logger)
 
-    singapore_dt = arrow.now("Asia/Singapore")
+    singapore_dt = datetime.now(tz=TIMEZONE)
     diff = singapore_dt - solar_dt
 
     # Need to be sure we don't get old data if image stops updating.
     if diff.total_seconds() > 3600:
-        msg = (
-            "Singapore solar data is too old to use, " "parsed data timestamp was {}."
-        ).format(solar_dt)
+        msg = f"Singapore solar data is too old to use, parsed data timestamp was {solar_dt}."
         logger.warning(msg, extra={"key": "SG"})
         return None
 
@@ -96,7 +100,9 @@ def parse_price(price_str) -> float:
     return float(price_str.replace("$", "").replace("/MWh", ""))
 
 
-def find_first_list_item_by_key_value(l, filter_key, filter_value, sought_key):
+def find_first_list_item_by_key_value(
+    section_list: list, filter_key, filter_value, sought_key
+):
     """
     Parses a common pattern in Singapore JSON response format. Examples:
 
@@ -112,7 +118,7 @@ def find_first_list_item_by_key_value(l, filter_key, filter_value, sought_key):
 
     return [
         list_item[sought_key]
-        for list_item in l
+        for list_item in section_list
         if list_item[filter_key] == filter_value
     ][0]
 
@@ -129,18 +135,18 @@ def sg_period_to_hour(period_str) -> float:
 def sg_data_to_datetime(data):
     data_date = data["Date"]
     data_time = sg_period_to_hour(data["Period"])
-    date_arrow = arrow.get(data_date, "DD MMM YYYY")
-    datetime_arrow = date_arrow.shift(hours=data_time)
-    data_datetime = arrow.get(datetime_arrow.datetime, TIMEZONE).datetime
+    data_datetime = datetime.strptime(data_date, "%d %b %Y").replace(
+        tzinfo=TIMEZONE
+    ) + timedelta(hours=data_time)
     return data_datetime
 
 
 def fetch_production(
-    zone_key: str = "SG",
+    zone_key: ZoneKey = ZoneKey("SG"),
     session: Session | None = None,
     target_datetime: datetime | None = None,
     logger: Logger = getLogger(__name__),
-) -> dict:
+) -> list[dict[str, Any]]:
     """Requests the last known production mix (in MW) of Singapore."""
     if target_datetime:
         raise NotImplementedError("This parser is not yet able to parse past dates")
@@ -177,44 +183,42 @@ def fetch_production(
         gen_type["Label"]: parse_percent(gen_type["Value"]) for gen_type in mix_section
     }
 
-    generation_by_type = defaultdict(float)  # this dictionary will default keys to 0.0
-
+    production_breakdowns = ProductionBreakdownList(logger)
+    mix = ProductionMix()
     for gen_type, gen_percent in gen_types.items():
         gen_mw = gen_percent * generation
-        mapped_type = TYPE_MAPPINGS.get(gen_type, None)
+        mapped_type = TYPE_MAPPINGS.get(gen_type)
 
         if mapped_type:
-            generation_by_type[TYPE_MAPPINGS[gen_type]] += gen_mw
+            mix.add_value(TYPE_MAPPINGS[gen_type], gen_mw)
 
         else:
             # unrecognized - log it, then add into unknown
             msg = (
-                'Singapore has unrecognized generation type "{}" '
-                "with production share {}%"
-            ).format(gen_type, gen_percent)
+                f'Singapore has unrecognized generation type "{gen_type}" '
+                f"with production share {gen_percent}%"
+            )
             logger.warning(msg)
-            generation_by_type["unknown"] += gen_mw
+            mix.add_value("unknown", gen_mw)
 
-    generation_by_type["solar"] = get_solar(requests_obj, logger)
+    mix.add_value("solar", get_solar(requests_obj, logger))
 
-    # some generation methods that are not used in Singapore
-    generation_by_type.update({"nuclear": 0, "wind": 0, "hydro": 0})
-
-    return {
-        "datetime": sg_data_to_datetime(data),
-        "zoneKey": zone_key,
-        "production": generation_by_type,
-        "storage": {},  # there is no known electricity storage in Singapore
-        "source": "emcsg.com, ema.gov.sg",
-    }
+    production_breakdowns.append(
+        datetime=sg_data_to_datetime(data),
+        zoneKey=zone_key,
+        production=mix,
+        storage=None,
+        source="emcsg.com, ema.gov.sg",
+    )
+    return production_breakdowns.to_list()
 
 
 def fetch_price(
-    zone_key: str = "SG",
+    zone_key: ZoneKey = ZoneKey("SG"),
     session: Session | None = None,
     target_datetime: datetime | None = None,
     logger: Logger = getLogger(__name__),
-) -> dict:
+) -> list[dict[str, Any]]:
     """
     Requests the most recent known power prices in Singapore (USEP).
 
@@ -246,14 +250,15 @@ def fetch_price(
         energy_section, "Label", "USEP", "Value"
     )
     price = parse_price(price_str)
-
-    return {
-        "zoneKey": zone_key,
-        "datetime": sg_data_to_datetime(data),
-        "currency": "SGD",
-        "price": price,
-        "source": "emcsg.com",
-    }
+    price_list = PriceList(logger)
+    price_list.append(
+        zoneKey=zone_key,
+        datetime=sg_data_to_datetime(data),
+        currency="SGD",
+        price=price,
+        source="emcsg.com",
+    )
+    return price_list.to_list()
 
 
 def __detect_datetime_from_solar_image(solar_image, logger: Logger):
@@ -278,7 +283,7 @@ def __detect_datetime_from_solar_image(solar_image, logger: Logger):
         logger.warning(msg, extra={"key": "SG"})
         return None
 
-    solar_dt = arrow.get(time_string).replace(tzinfo="Asia/Singapore")
+    solar_dt = datetime.fromisoformat(time_string).replace(tzinfo=TIMEZONE)
     return solar_dt
 
 

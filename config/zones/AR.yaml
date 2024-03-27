@@ -4,17 +4,35 @@ bounding_box:
   - - -53.161551879999934
     - -21.286937763999916
 capacity:
-  biomass: 140
-  gas: 23837
-  hydro: 11359
-  nuclear: 1755
-  oil: 1696
-  solar: 1145
-  wind: 3327
+  biomass:
+    - datetime: '2022-01-01'
+      source: Ember, Yearly electricity data
+      value: 280.0
+  hydro:
+    - datetime: '2022-01-01'
+      source: Ember, Yearly electricity data
+      value: 10390.0
+  nuclear:
+    - datetime: '2022-01-01'
+      source: Ember, Yearly electricity data
+      value: 1750.0
+  solar:
+    - datetime: '2022-01-01'
+      source: Ember, Yearly electricity data
+      value: 1110.0
+  unknown:
+    - datetime: '2022-01-01'
+      source: Ember, Yearly electricity data
+      value: 24810.0
+  wind:
+    - datetime: '2022-01-01'
+      source: Ember, Yearly electricity data
+      value: 3310.0
 contributors:
   - systemcatch
   - corradio
   - nessie2013
+disclaimer: Unknown production is the aggregation of thermal production, mainly gas.
 emissionFactors:
   direct:
     battery discharge:
@@ -161,5 +179,5 @@ fallbackZoneMixes:
         wind: 0.0772943608308855
 parsers:
   production: CAMMESA.fetch_production
-disclaimer: Unknown production is the aggregation of thermal production, mainly gas.
+  productionCapacity: EMBER.fetch_production_capacity
 timezone: America/Argentina/Buenos_Aires

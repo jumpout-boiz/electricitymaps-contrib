@@ -136,8 +136,7 @@ def fetch_production(
                 list(
                     filter(
                         lambda x: x["titleTranslationId"]
-                        == "ProductionConsumption.%s%sDesc"
-                        % ("NotSpecified", zone_key),
+                        == f"ProductionConsumption.{'NotSpecified'}{zone_key}Desc",
                         obj["NotSpecifiedData"],
                     )
                 )[0]["value"].replace("\xa0", "")
@@ -225,10 +224,8 @@ def fetch_exchange(
 
     sorted_exchange = "->".join(sorted([zone_key1, zone_key2]))
     data = _sum_of_exchanges(
-        map(
-            lambda e: _fetch_exchanges_from_sorted_bidding_zones(e, r, target_datetime),
-            exchanges_mapping[sorted_exchange],
-        )
+        _fetch_exchanges_from_sorted_bidding_zones(e, r, target_datetime)
+        for e in exchanges_mapping[sorted_exchange]
     )
     data["sortedZoneKeys"] = "->".join(sorted([zone_key1, zone_key2]))
 

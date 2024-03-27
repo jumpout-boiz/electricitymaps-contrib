@@ -3,7 +3,7 @@ import * as d3 from 'd3-format';
 import { TimeAverages } from './constants';
 import { EnergyUnits, PowerUnits } from './units';
 
-const DEFAULT_NUM_DIGITS = 2;
+const DEFAULT_NUM_DIGITS = 3;
 
 function addSpaceBetweenNumberAndUnit(inputString: string) {
   // Use a regular expression to add a space between the number and unit
@@ -61,7 +61,7 @@ export const formatCo2 = function (grams: number, valueToMatch?: number): string
     return addSpaceBetweenNumberAndUnit(`${d3.format(`,.${decimals}~r`)(grams / 1e6)}t`);
   }
   // tonnes or above with significant figures as a default
-  return addSpaceBetweenNumberAndUnit(`${d3.format(',.2~s')(grams / 1e6)}t`);
+  return addSpaceBetweenNumberAndUnit(`${d3.format(',.3~s')(grams / 1e6)}t`);
 };
 
 const scalePower = function (maxPower: number | undefined, isPower = false) {
@@ -148,46 +148,6 @@ const formatDate = function (date: Date, lang: string, time: string) {
   }
 };
 
-const getLocaleNumberFormat = (lang: string, { unit, unitDisplay, range }: any) => {
-  try {
-    return new Intl.NumberFormat(lang, {
-      style: 'unit',
-      unit,
-      unitDisplay: unitDisplay || 'long',
-    }).format(range);
-  } catch {
-    // As Intl.NumberFormat with custom 'unit' is not supported in all browsers, we fallback to
-    // a simple English based implementation
-    const plural = range === 1 ? '' : 's';
-    return `${range} ${unit}${plural}`;
-  }
-};
-
-const formatTimeRange = (lang: string, timeAggregate: TimeAverages) => {
-  // Note that not all browsers fully support all languages
-  switch (timeAggregate) {
-    case TimeAverages.HOURLY: {
-      return getLocaleNumberFormat(lang, { unit: 'hour', range: 24 });
-    }
-    case TimeAverages.DAILY: {
-      return getLocaleNumberFormat(lang, { unit: 'day', range: 30 });
-    }
-    case TimeAverages.MONTHLY: {
-      return getLocaleNumberFormat(lang, { unit: 'month', range: 12 });
-    }
-    case TimeAverages.YEARLY: {
-      return getLocaleNumberFormat(lang, {
-        unit: 'year',
-        range: new Date().getUTCFullYear() - 2017,
-      });
-    }
-    default: {
-      console.error(`${timeAggregate} is not implemented`);
-      return '';
-    }
-  }
-};
-
 const formatDateTick = function (date: Date, lang: string, timeAggregate: TimeAverages) {
   if (!isValidDate(date) || !timeAggregate) {
     return '';
@@ -259,4 +219,4 @@ function formatDataSources(dataSources: string[], language: string) {
       );
 }
 
-export { formatDataSources, formatDate, formatDateTick, formatTimeRange, scalePower };
+export { formatDataSources, formatDate, formatDateTick, scalePower };

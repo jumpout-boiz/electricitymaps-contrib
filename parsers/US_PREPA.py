@@ -116,18 +116,14 @@ def fetch_production(
 
     assert res.status_code == 200, (
         "Exception when fetching production for "
-        "{}: error when calling url={}".format(zone_key, GENERATION_BREAKDOWN_URL)
+        f"{zone_key}: error when calling url={GENERATION_BREAKDOWN_URL}"
     )
 
     sourceData = extract_data(res.text)
 
     logger.debug(f"Raw generation breakdown: {sourceData}", extra={"key": zone_key})
 
-    for (
-        item
-    ) in (
-        sourceData
-    ):  # Item has a label with fuel type + generation in MW, and a value with a percentage
+    for item in sourceData:  # Item has a label with fuel type + generation in MW, and a value with a percentage
         if item["label"] == "  MW":  # There's one empty item for some reason. Skip it.
             continue
 
@@ -162,7 +158,7 @@ def fetch_production(
 
     assert res.status_code == 200, (
         "Exception when fetching renewable production for "
-        "{}: error when calling url={}".format(zone_key, RENEWABLES_BREAKDOWN_URL)
+        f"{zone_key}: error when calling url={RENEWABLES_BREAKDOWN_URL}"
     )
 
     sourceData = extract_data(res.text)
@@ -177,11 +173,7 @@ def fetch_production(
         extra={"key": zone_key},
     )
 
-    for (
-        item
-    ) in (
-        sourceData
-    ):  # Somewhat different from above, the item's label has the generation type and the item's value has generation in MW
+    for item in sourceData:  # Somewhat different from above, the item's label has the generation type and the item's value has generation in MW
         if item["label"] == "  ":  # There's one empty item for some reason. Skip it.
             continue
 
@@ -252,9 +244,7 @@ def fetch_production(
 
     assert (
         res.status_code == 200
-    ), "Exception when fetching timestamp for " "{}: error when calling url={}".format(
-        zone_key, TIMESTAMP_URL
-    )
+    ), f"Exception when fetching timestamp for {zone_key}: error when calling url={TIMESTAMP_URL}"
 
     raw_timestamp_match = re.search(
         r"Ultima Actualizaci�n:  ((?:0[1-9]|1[0-2])/(?:[0-2][0-9]|3[0-2])/2[01][0-9]{2}  [0-2][0-9]:[0-5][0-9]:[0-5][0-9] [AP]M)",

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from logging import Logger, getLogger
 from math import isnan
 from operator import itemgetter
+from zoneinfo import ZoneInfo
 
-import arrow
 import numpy as np
 import pandas as pd
 from bs4 import BeautifulSoup
@@ -47,7 +47,7 @@ thermal_plants = {
     "ESTRELLA DEL MAR 2 SFO": "oil",
     "ESTRELLA DEL MAR 2 SGN": "gas",
     "ESTRELLA DEL MAR 3": "gas",
-    "GENERACI\xD3N DE EMERGENCIA AES ANDR\xC9S": "gas",
+    "GENERACI\xd3N DE EMERGENCIA AES ANDR\xc9S": "gas",
     "HAINA TG": "oil",
     "INCA KM22": "oil",
     "ITABO 1": "coal",
@@ -204,8 +204,8 @@ def thermal_production(df, logger: Logger) -> list[dict]:
 
         current_plants = {k: tp[k] for k in tp if not isnan(tp[k])}
 
-        for plant in current_plants.keys():
-            if plant not in thermal_plants.keys():
+        for plant in current_plants:
+            if plant not in thermal_plants:
                 unmapped.add(plant)
 
         mapped_plants = [
@@ -272,9 +272,9 @@ def merge_production(thermal, total) -> list[dict]:
     final = sorted(d.values(), key=itemgetter("datetime"))
 
     def get_datetime(hour):
-        at = arrow.now("America/Dominica").floor("day")
-        dt = (at.shift(hours=int(hour) - 1)).datetime
-        return dt
+        return datetime.now(tz=ZoneInfo("America/Dominica")).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ) + timedelta(hours=int(hour) - 1)
 
     for item in final:
         i = item["datetime"]
